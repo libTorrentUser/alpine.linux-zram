@@ -10,7 +10,7 @@ Just follow these steps
 If you want to insert a startup script, one way to do it is by modifying the aports/main/alpine-baselayout/inittab file inside the cloned aports repository and tell it to run your script when the system boots. See the file scripts/aports.diff if you want to know how I did it. And if you choose to do the same, remember you must rebuild the alpine-baselayout package in order to use. And don't forget to bump the version, otherwise the scripts will use the default package.
 
 To rebuild the package after chaning it:
-- cd into to aports/main/alpine-baselayoyt
+- cd into to aports/main/alpine-baselayout
 - run abuild checksum
 - run abuild
 
