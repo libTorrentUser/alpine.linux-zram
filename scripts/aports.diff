@@ -1,0 +1,448 @@
+diff --git a/main/alpine-baselayout/APKBUILD b/main/alpine-baselayout/APKBUILD
+index 6b7e47be..82dc8eb1 100644
+--- a/main/alpine-baselayout/APKBUILD
++++ b/main/alpine-baselayout/APKBUILD
+@@ -1,8 +1,8 @@
+ # Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+ # Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+ pkgname=alpine-baselayout
+-pkgver=3.2.0
+-pkgrel=23
++pkgver=4.0.0
++pkgrel=24
+ pkgdesc="Alpine base dir structure and init scripts"
+ url="https://git.alpinelinux.org/cgit/aports/tree/main/alpine-baselayout"
+ arch="all"
+@@ -272,7 +272,7 @@ bfe947bdd69e7d93b32c8cb4e2cabe5717cb6c1e1f49a74015ac2cfb13e96d1f12c4be23ae93a1d6
+ 49109d434b577563849c43dd8141961ca798dada74d4d3f49003dac1911f522c43438b8241fa254e4faacdd90058f4d39a7d69b1f493f6d57422c1f706547c95  i386.conf
+ 9dda8c9d1896baf1217aa05ae2936e909300a22a98da9f4c3ba29136852477bf4764321b6a1abb15e93ee58f4a6e77ddfc42cbb12cbbb53cf0f431ace444f72f  kms.conf
+ 806b8f23f823a9471846d12fa6b55690b95eedb4c613b82aefaba7ffef23f83e17552befd891a487864f72ef24e395d8611738933f684a85eb4c336cb20994f8  group
+-fdab6f8fec2a556ab817d90a73635a927ea04dbc4e0470ed59ee6a62c87393f9534c9b746b09a776d938c25b8af9c9fb1686578e24f8307d1d074921ade1bdc7  inittab
++959ba8e403f5ce98f8a0bb0d637541858f728f744ea16962e14da61851e1faacd899bfe89f001c68f5f9f4b91071da8fdb9e45e9ce1eefd4af0036adfb354a6b  inittab
+ 06d12a7b9ca14fe17e412d0f24814620b67d035ae859be7906cbf4782dd69e359a6a555dafb98060b7fb7e4714aaa676c88d9017cded36e6d8398e23369bb290  passwd
+ dfc810763c5d94ef6bd149bdb0b152712c0c0aadc7ad3c5c916e2c6e8ed57246e3cdac50d2743b9d009267bdbd47e91b6ad58fe6d068baf132043c38e8fd820d  profile
+ eadc83e47fcc354ab83fd109bee452bda170886fb684e67faf615930c11480919505f4af60c685b124efc54af0ded9522663132f911eac6622144f8b4c8be695  protocols-6.2
+diff --git a/main/alpine-baselayout/inittab b/main/alpine-baselayout/inittab
+index 960aa405..141d6792 100644
+--- a/main/alpine-baselayout/inittab
++++ b/main/alpine-baselayout/inittab
+@@ -1,8 +1,9 @@
+ # /etc/inittab
+ 
+-::sysinit:/sbin/openrc sysinit
+-::sysinit:/sbin/openrc boot
+-::wait:/sbin/openrc default
++#::sysinit:/sbin/openrc sysinit
++#::sysinit:/sbin/openrc boot
++#::wait:/sbin/openrc default
++::sysinit:/bin/sh -c 'for _d in /media/*; do _f="$_d/ali/init.sh"; if [ -e $_f ]; then $_f; break; fi done && exit'
+ 
+ # Set up a couple of getty's
+ tty1::respawn:/sbin/getty 38400 tty1
+diff --git a/scripts/custom-mkimage.sh b/scripts/custom-mkimage.sh
+new file mode 100755
+index 00000000..6f3681e5
+--- /dev/null
++++ b/scripts/custom-mkimage.sh
+@@ -0,0 +1,322 @@
++#!/bin/sh
++
++# creates a live Alpine Linux image that will mount the rootfs on zram
++# 
++# usage 
++# custom-mkimage.sh --profile=profile --directory=dir [--packages="p1 p2 ..."]
++#
++#
++# ex:
++#
++# build a live ISO containing the dir /my/dir/ using the profile custom_virt
++# custom-mkimage.sh --profile=custom_virt --directory=/my/dir
++#
++# same as above, but include the dwm and mpv packages
++# custom-mkimage.sh --profile=custom_virt --directory=/my/dir --packages="dwm mpv"
++#
++# NOTE: the --packages option will only work on profiles contained in the 
++# mkimg.custom.sh file. If you wish to use it with other profiles, take a look
++# at how it is done on the "custom" profiles and copy the code to yours.
++
++
++_profile=;
++_directory=;
++_packages=;
++_zram=1;
++
++
++_buildDir='/tmp/aports';
++_sysScriptDir="${_buildDir}/scripts";
++
++
++
++# print something and exit the script
++Die()
++{
++	printf >&2 -- '%s\n' "$*";
++	exit 1;
++}
++
++
++# check the result of a command and exit the script if it failed
++DieIfFails()
++{
++	"$@" || Die "cannot $*"; 
++}
++
++
++ParseCommandLine()
++{
++	for i in "$@"; do
++		case $i in			 			
++			--directory=*)
++				_directory="${i#*=}";
++				shift;
++	      	;;
++	      	-h|--help)
++	      		PrintUsage;
++	      	;;	    
++			--packages=*)
++				_packages="${i#*=}";
++				shift;
++	      	;;
++	      	--profile=*)
++	      		_profile="${i#*=}";
++	      		shift;
++	      	;;
++			--)
++	      		# nothing else to parse
++	      		shift;
++	      		break;  
++	      	;;    
++	    	*)
++	      		Die "Unknown option \"$i\""
++				exit 1;
++	      	;;
++		esac
++	done
++}
++
++
++
++# first we ensure our customized version of alpine-baselayout is built. The
++# modified inittab file is there, and it is pretty much the most important 
++# change we made. It is the inittab file the one that calls the user defined
++# initialization script (the ali/init.sh file)
++#cd ../main/alpine-baselayout
++#abuild
++
++UpdatePath()
++{
++	DieIfFails mkdir -p "$_sysScriptDir";
++	PATH="${_sysScriptDir}:$PATH";
++}
++
++
++# mkimage.sh, the standard Alpine Linux script would should call to build 
++# Alpine Linux ISOs,  will call /sbin/update-kernel to generate the kernel and 
++# the initfs. But, currently, mkimage.sh does not allow us to pass a couple of
++# useful paramters to update-kernel. Another problem is that the update-kernel
++# script will call mkinitfs but it does not allow us to call it using some
++# parameters we need to use.
++#
++# In order to solve all that we will copy the update-kernel script so we can 
++# change it at will. We will then update $PATH to ensure that our copy is used
++# instead when using this script (see UpdatePath()).
++ModifyUpdateKernel()
++{
++	DieIfFails cp "/sbin/update-kernel" "${_sysScriptDir}";
++
++	# update /sbin/update-kernel so we can pass aditional compression options to the
++	# mkquashfs call that will be done when generating the ISO
++	#sudo sed -i 's/-comp xz -exit-on-error/-comp xz \$_alpinoSquashFsOptions -exit-on-error/' /sbin/update-kernel
++	#export _alpinoSquashFsOptions="-b 1M -Xdict-size 100% -Xbcj x86";	
++	DieIfFails sed -i 's/-comp xz -exit-on-error/-comp xz -b 1M -Xdict-size 100% -Xbcj x86 -exit-on-error/' "${_sysScriptDir}/update-kernel";
++
++	# the user can pass "features" to the mkinitfs script so he can access that
++	# stuff when the initfs is loaded during boot. Those "features" are files 
++	# that contain modules and files that will be copied to initramfs.
++	#
++	# When the mkinitfs script is executed, it will search for files named 
++	# "feature.modules" and "feature.files" inside the mkinitfs features 
++	# directory (default is "/etc/mkinitfs.d/features.d", but we add another one
++	# to the list - see ModifyMkinitfs()).
++	#
++	# The kernel modules inside the .modules files will be simply copied to the
++	# initramfs, but the files inside the .files files will not. The only way to
++	# make those files available inside initramfs seems to be to also pass a 
++	# list of packages that contains them to the update-kernel script. The 
++	# update-kernel script will then extract those packages inside a temporary 
++	# directory and the mkinitfs script will then search for the files there, in
++	# that temp directory, and only if it finds the file there it will copy 
++	# them to the initfs.
++	#
++	# If you do not provide the package, mkinitfs will not find the files and
++	# will simply ignore them.
++	#
++	# Although the mkimage.sh script allows the user to pass this list of 
++	# packages, using a variable named "kernel_addons" in the profile_xxxx()
++	# function, it will add a "kernel-flavor" suffix to the values before 
++	# passing them to the update-kernel script (which is the one who fecthes and
++	# extracts the packages). That suffix will (probably) cause the package to
++	# not be found because, for instance, there is an "e2fsprogs" package in the
++	# repositories, but there isn't an "e2fsprogs-vanilla" or "e2fsprogs-virt"
++	# package.
++	#
++	# Because of all that, we have to modify our local copy of update-kernel
++	# and manually add the packages we need there
++	if [ -n  "$_zram" ]; then
++		# add the e2fsprogs package because we will put an ext4 file system
++		# in the zram device where we will put the system root
++		sed -i 's;_apk add --no-scripts alpine-base \$PACKAGES;& e2fsprogs;' "${_sysScriptDir}/update-kernel";
++	fi
++}
++
++
++# copy and modify mkinitfs, as described in the comments of ModifyUpdateKernel()
++ModifyMkinitfs()
++{
++	DieIfFails cp "/sbin/mkinitfs" "${_sysScriptDir}";
++
++	# change comoopression to xz. We also disable multi-threading since it 
++	# seems to produce slightly smaller files. You can add -T 0 (or -T threads)
++	# again if you wish to test it out (-T 0 means all available core/threads)
++	DieIfFails sed -i 's;initfscomp=gzip;initfscomp=xz;'  "${_sysScriptDir}/mkinitfs";
++	DieIfFails sed -i 's;xz -C crc32 -T 0;xz -9e -C crc32;' "${_sysScriptDir}/mkinitfs";
++
++	# if the user wants to mount the root filesytem on a zram device (which is
++	# awesome), we will have to force mkinitfs to use a modified version of 
++	# initramfs-init. 
++	if [ -n "$_zram" ]; then			
++		local mkinitfsDir="${_sysScriptDir}/mkinitfs.d";	
++	
++		# the zram module is not part of the default "feautures" of mkinitfs.
++		# We have to add it there otherwise the module won't be inclused inside
++		# the initramfs and the system will crash when we try to load it using
++		# the code below (SysRootToZRAM())		
++
++		# in order to avoid messing with the system, we will create a temporary
++		# features directory and write the features we need there
++		local featuresDir="${mkinitfsDir}/features.d";
++		DieIfFails mkdir -p "$featuresDir";
++
++		# and now hard-code that dir into mkinitfs search path
++		DieIfFails sed -i 's!features_dirs=\$.*!&\nfeatures_dirs="'"${featuresDir}"' \$features_dirs"!' "${_sysScriptDir}/mkinitfs";		
++		
++		if [ ! -e "/etc/mkinitfs/features.d/zram.modules" ]; then
++			# since there is no zram.modules file in the standard features
++			# directory, we create our own and add our directory to the list of
++			# directories mkinitfs will search for features. The only problem
++			# is that, although the mkinitfs script is prepared to receive that
++			# directory as an argument, we do not call it directly. It gets 
++			# called by the update-kernel script, and there is no way to pass
++			# the directory to that one so it can forward to mkinitfs. So, 
++			# because of that, we have modify our local mkinitfs copy again and 
++			# hard-code the directory right in there
++			DieIfFails printf 'kernel/drivers/block/zram/zram.ko' > "${featuresDir}/zram.modules";			
++		fi
++
++		# since we will mount an ext4 file system on top of our zram device, we
++		# need the mkfs files in there too. 
++		#
++		# IMPORTANT: simply specifying these files here will not make them 
++		# available inside the initramfs. The package(s) containing them must
++		# be passed to update-kernel. See ModifyUpdateKernel() for more info
++		if [ ! -e "/etc/mkinitfs/features.d/ext4.files" ]; then
++			printf '/sbin/mke2fs\n/sbin/mkfs.ext4' > "${featuresDir}/ext4.files";
++		fi
++
++		# force the zram and ext4 features to always be included
++		DieIfFails sed -i 's;\( features="\)\(.*\);\1zram ext4 \2;' "${_sysScriptDir}/mkinitfs";
++	
++		# force (our) mkinitfs to use our own mkinitfs-in					
++		DieIfFails cp "/usr/share/mkinitfs/initramfs-init" "$mkinitfsDir";
++		DieIfFails sed -i 's;init="$datadir"/initramfs-init;init='"${mkinitfsDir}/initramfs-init"';' "${_sysScriptDir}/mkinitfs";
++
++		# remove this from mkinitfs-in because we will no longer using tmpfs on
++		# the root file system. We'll be using ext4 (on zram) and "mode=xxx" is
++		# not a valid ext4 mount option
++		sed -i 's;rootflags="mode=0755";rootflags=;'  "${mkinitfsDir}/initramfs-init"
++
++		# and update it so it creates a zram device and mounts the
++		# root file system on it
++		local commands=$(cat <<'__ModifyMkinitfs_HereDocLimitString__'
++		
++SysRootToZRAM()
++{	
++	ebegin 'SysRootToZRAM'
++	
++	# get how much is 85% of the available RAM, in MB.
++	# That will be the limit of our zram disk will be
++	# able to use. And the zram disk size will be 2x
++	# that ammount
++	local _totalRAMinKB=$(awk 'NR==3{ print $2; exit }' /proc/meminfo)
++
++	local _zramMemLimitInMB=$( echo $_totalRAMinKB | awk '{ printf("%d"), $1 / 1024 * .85 }' )
++
++	local _zramDiskSizeInMB=$(($_zramMemLimitInMB * 2))
++
++	# setup the zram device
++	modprobe zram num_devices=1
++	echo zstd > /sys/block/zram0/comp_algorithm
++	echo "${_zramDiskSizeInMB}M" > /sys/block/zram0/disksize
++	echo "${_zramMemLimitInMB}M" > /sys/block/zram0/mem_limit
++			
++	# remove invalid ext mount options
++	rootflags="${rootflags#mode=*,}";
++
++	# and add some useful (and needed) ones
++	rootflags="${rootflags:+${rootflags},}noatime,discard";	
++	printf 'rootflags=%s\\n' "${rootflags}"; 
++
++	# mount our zram device on the sysroot dir								
++	mkfs.ext4 -m 0 -O ^has_journal /dev/zram0
++	mount -t ext4 -o $rootflags /dev/zram0 $sysroot
++
++	# change the mode to 0755, which is what the original initramfs-init did
++	chmod 0755 $sysroot
++
++	eend $?
++}
++
++# mount -t tmpfs -o $rootflags tmpfs $sysroot
++SysRootToZRAM;
++
++__ModifyMkinitfs_HereDocLimitString__
++			);
++
++		# update our initramfs-init copy with the new one that has the code 
++		# above
++		local updatedDoc=;
++		updatedDoc=$(awk -v x="$commands" '{sub(/mount -t tmpfs -o \$rootflags tmpfs \$sysroot/, x); print;}' "${mkinitfsDir}/initramfs-init");
++		if [ $? -ne 0 ]; then
++			Die 'call to awk failed';
++		fi;
++		
++		printf '%s' "$updatedDoc" > "${mkinitfsDir}/initramfs-init"
++	fi;
++}
++
++
++Execute()
++{
++	printf 'profile: %s
++directory: %s
++packages: %s
++zram: %i\n' \
++"$_profile" \
++"$_directory" \
++"$_packages" \
++"$_zram";
++
++
++	# get the version and then extract only the major.minor digits, because that is
++	# what goes inside the official repositories URLs
++	#_version=$(grep 'pkgver=' ../alpine-base/APKBUILD)
++	#_version=$(echo $_version | sed 's/.*=\([0-9]\+.[0-9]\+\).*/\1/')
++
++	# and now use that version to create the URL
++	#_officialRepositoryURL="http://dl-cdn.alpinelinux.org/alpine/v${_version}"
++	_officialRepositoryURL="http://dl-cdn.alpinelinux.org/alpine/latest-stable"
++
++	# clean the work dir (sudo is needed because some files are owned by root)
++	DieIfFails sudo rm -rf "${_buildDir}/work";
++
++	# finally, build the live image
++	#cd ../../scripts
++	CUSTOM_DIR="$_directory" CUSTOM_APKS="$_packages" ./mkimage.sh \
++		--profile "$_profile" \
++		--outdir "${_buildDir}/iso" \
++		--workdir "${_buildDir}/work" \
++		--repository "${_buildDir}/packages/main" \
++		--repository "${_officialRepositoryURL}/main" \
++		--repository "${_officialRepositoryURL}/community" \
++		--arch x86_64
++}
++
++
++ParseCommandLine "$@";
++UpdatePath;
++ModifyUpdateKernel;
++ModifyMkinitfs;
++Execute;
+diff --git a/scripts/mkimg.custom.sh b/scripts/mkimg.custom.sh
+new file mode 100755
+index 00000000..2e870f7a
+--- /dev/null
++++ b/scripts/mkimg.custom.sh
+@@ -0,0 +1,73 @@
++# when this profile is used you can create a customized Alpine Linux live ISO
++# by setting some env vars.
++#
++# CUSTOM_DIR
++#     This directory will be copied to the root of the ISO
++#
++# CUSTOM_APKS
++#     Extra apks that will be copied into the ISO
++#
++#
++# NOTE: the reason we went the env var route instead of passing these values as
++# some pretty arguments to a mkimage.sh call is that, by using env vars we avoid
++# having to modify any other default script file which, in turn, makes it much
++# easier to merge these modifications whenever Alpine Linux is updated
++
++build_custom() {
++	if [ ! -z "$CUSTOM_DIR" ]; then
++		cp -ar "${CUSTOM_DIR}" "${DESTDIR}"
++	fi
++}
++
++
++# mkimage.sh will search for all functions named "section_*" and then call them
++# when building the profile. Here is where we will call build_custom(), which
++# will copy the dir CUSTOM_DIR to the final ISO.
++#
++# It is very important to format this function name exactly like this! There 
++# must be a space after the parenthesis, the curly brace must be on the same 
++# line as the function name and there must be nothing after the brace. Not even
++# spacing chars! See the function load_plugins() in mkimage.sh to see the reason
++# why all that is required
++section_custom() {
++	build_section custom
++}
++
++
++profile_custom() {
++	title="Custom"
++	desc="Alpine Linux with custom packages."
++	profile_base
++	profile_abbrev="custom"
++	image_ext="iso"
++	arch="x86_64"
++	output_format="iso"
++	apks="$apks $CUSTOM_APKS"
++}
++
++
++profile_custom_virt() {
++	profile_custom	
++	kernel_flavors="virt"
++	apks="$apks $CUSTOM_APKS" 
++}
++
++
++profile_custom_mpv() {
++	title="Custom mpv"
++	desc="Alpine Linux with mpv"
++	profile_base
++	profile_abbrev="custom"
++	image_ext="iso"
++	arch="x86_64"
++	output_format="iso"
++	apks="$apks $CUSTOM_APKS \
++		xorg-server xf86-input-libinput eudev xf86-video-amdgpu xf86-video-intel xf86-video-qxl xf86-video-modesetting xset xsetroot \
++		mesa-dri-gallium mesa-egl setxkbmap dwm ttf-freefont font-noto-cjk \
++		p7zip \
++		alsa-utils alsa-lib alsaconf \
++		wireless-tools wpa_supplicant \
++		openssh ntfs-3g rdesktop"
++}
++
++
