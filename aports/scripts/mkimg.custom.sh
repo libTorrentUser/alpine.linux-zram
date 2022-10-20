@@ -67,7 +67,7 @@ profile_custom_mpv() {
 		p7zip \
 		alsa-utils alsa-lib alsaconf \
 		wireless-tools wpa_supplicant \
-		openssh ntfs-3g rdesktop"
+		openssh openssh-client openssh-server ntfs-3g rdesktop"
 }
 
 
