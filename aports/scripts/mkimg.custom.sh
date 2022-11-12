@@ -61,13 +61,27 @@ profile_custom_mpv() {
 	image_ext="iso"
 	arch="x86_64"
 	output_format="iso"
+	kernel_flavors="custom"
 	apks="$apks $CUSTOM_APKS \
 		xorg-server xf86-input-libinput eudev xf86-video-amdgpu xf86-video-intel xf86-video-qxl xf86-video-modesetting xset xsetroot \
 		mesa-dri-gallium mesa-egl setxkbmap dwm ttf-freefont font-noto-cjk \
 		p7zip \
 		alsa-utils alsa-lib alsaconf \
 		wireless-tools wpa_supplicant \
-		openssh openssh-client openssh-server ntfs-3g rdesktop"
+		openssh openssh-client openssh-server ntfs-3g rdesktop \
+		mpv \
+		qemu-audio-alsa qemu-hw-display-virtio-vga \
+			qemu-hw-display-virtio-vga-gl \
+			qemu-hw-display-virtio-gpu \
+			qemu-hw-display-virtio-gpu-gl \
+			qemu-hw-display-virtio-gpu-pci \
+			qemu-hw-display-virtio-gpu-pci-gl \
+			qemu-img \
+			qemu-system-x86_64 \
+			qemu-ui-gtk \
+			qemu-ui-opengl \
+			samba-server \
+			samba-common-tools"
 }
 
 
