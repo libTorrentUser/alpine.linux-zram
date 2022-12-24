@@ -44,7 +44,7 @@ index f2979961..8d3e6694 100644
 +# 'linux-firmware-any' of instead 'linux-firmware') is that one can simply 
 +# install 'linux-firmware-none' and the build system will be happy and 
 +# everything will work.
- makedepends="$_depends_dev sed installkernel bc linux-headers linux-firmware-any openssl1.1-compat-dev mawk
+ makedepends="$_depends_dev sed installkernel bc linux-headers linux-firmware-any openssl-dev>3 mawk
  	diffutils findutils zstd"
  options="!strip"
 @@ -34,6 +47,8 @@ source="https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/linux-$_kernver
@@ -86,7 +86,7 @@ index f2979961..8d3e6694 100644
 +		# Unfortunately this is not really reversible in case the user
 +		# stops the process in the middle
 +		cp "$srcdir"/linux-$_kernver/arch/x86/Makefile "$srcdir"/linux-$_kernver/arch/x86/Makefile.alpino-bak
-+		sed -i 's/march=k8\|march=nocona\|mtune=generic/march=native mtune=native/' "$srcdir"/linux-$_kernver/arch/x86/Makefile
++		sed -i 's/march=k8\|march=nocona\|mtune=generic/march=native -mtune=native/' "$srcdir"/linux-$_kernver/arch/x86/Makefile
 +	else
 +		# just to be safe, in case there is a Makefile.alpino-bak, assume it is the original and restore it
 +		if [ -e "$srcdir"/linux-$_kernver/arch/x86/Makefile.alpino-bak ]; then
