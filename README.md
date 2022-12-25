@@ -16,3 +16,5 @@ To rebuild the package after changing it:
 
 The pacakge will be built into your local repository. The file /etc/abuild.conf will give you the location. Make sure that the custom-mkimage.sh script is using that directory. By default, custom-mkimage.sh will use /tmp/aports/packages/ so, if your local repository path is set to anything else, either change it inside custom-mkimage.sh or change it on /etc/abuild.conf. And remember that your local repository should come before any others in order to ensure the scripts will look there first.
 
+By the way, if scripts/aports.diff seems scary and big, it is because it contains a kernel config file. Don't worry though. That config is (should be) exactly the same as the "aports/main/linux-lts/lts.x86_64.config", only with the "CONFIG_RETPOLINE=n" line added at the end. 
+
