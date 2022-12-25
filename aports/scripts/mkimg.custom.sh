@@ -65,6 +65,7 @@ profile_custom_mpv() {
 	apks="$apks $CUSTOM_APKS \
 		xorg-server xf86-input-libinput eudev xf86-video-amdgpu xf86-video-intel xf86-video-qxl xf86-video-modesetting xset xsetroot \
 		mesa-dri-gallium mesa-egl setxkbmap dwm ttf-freefont font-noto-cjk \
+		hdparm \
 		p7zip \
 		alsa-utils alsa-lib alsaconf \
 		wireless-tools wpa_supplicant \
