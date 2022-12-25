@@ -70,7 +70,7 @@ profile_custom_mpv() {
 		alsa-utils alsa-lib alsaconf \
 		wireless-tools wpa_supplicant \
 		openssh openssh-client openssh-server ntfs-3g rdesktop \
-		mpv \
+		mpv ffmpeg \
 		qemu-audio-alsa qemu-hw-display-virtio-vga \
 			qemu-hw-display-virtio-vga-gl \
 			qemu-hw-display-virtio-gpu \
